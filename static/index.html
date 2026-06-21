@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Retention</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0f;
+      color: #e8e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    header { text-align: center; }
+    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+    header p { margin-top: 0.4rem; color: #7c7c9a; font-size: 0.95rem; }
+
+    /* ── Video upload ── */
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #7c7c9a;
+      margin-bottom: 0.75rem;
+    }
+
+    #dropzone {
+      border: 2px dashed #2a2a3d;
+      border-radius: 14px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    #dropzone:hover, #dropzone.drag-over {
+      border-color: #6c5ce7;
+      background: rgba(108, 92, 231, 0.05);
+    }
+    #dropzone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    #dropzone .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    #dropzone p { color: #7c7c9a; font-size: 0.9rem; }
+    #dropzone .hint { font-size: 0.78rem; color: #4a4a6a; margin-top: 0.4rem; }
+
+    #video-status {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: #7c7c9a;
+      min-height: 1.2em;
+    }
+    #video-status.success { color: #00cec9; }
+    #video-status.error { color: #e17055; }
+
+    /* ── Recording ── */
+    .record-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+    }
+
+    #record-btn {
+      flex-shrink: 0;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: none;
+      background: #1e1e2e;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      transition: background 0.2s, transform 0.1s;
+      position: relative;
+    }
+    #record-btn:hover { background: #2a2a3f; }
+    #record-btn.recording {
+      background: #e17055;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    #record-btn:active { transform: scale(0.95); }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(225, 112, 85, 0.5); }
+      50% { box-shadow: 0 0 0 12px rgba(225, 112, 85, 0); }
+    }
+
+    .transcript-box {
+      flex: 1;
+      background: #111120;
+      border: 1px solid #1e1e30;
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      min-height: 120px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: #e8e8f0;
+    }
+    .transcript-box .placeholder { color: #3a3a5a; }
+    .transcript-box .interim { color: #7c7c9a; }
+    .transcript-box .final { color: #e8e8f0; }
+
+    /* ── Submit ── */
+    #submit-btn {
+      width: 100%;
+      padding: 1rem;
+      border: none;
+      border-radius: 12px;
+      background: #6c5ce7;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    #submit-btn:hover:not(:disabled) { background: #7d70ea; }
+    #submit-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #submit-status {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #7c7c9a;
+      min-height: 1.2em;
+    }
+    #submit-status.success { color: #00cec9; }
+    #submit-status.error { color: #e17055; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Retention</h1>
+    <p>Upload your video and describe what you want to learn</p>
+  </header>
+
+  <!-- Video -->
+  <div>
+    <div class="section-label">Video</div>
+    <div id="dropzone">
+      <input type="file" id="video-input" accept="video/*" />
+      <div class="icon">🎬</div>
+      <p>Drop a video here or click to browse</p>
+      <p class="hint">MP4, MOV, WebM — any lecture, talk, or lesson</p>
+    </div>
+    <div id="video-status"></div>
+  </div>
+
+  <!-- Audio -->
+  <div>
+    <div class="section-label">What do you want to learn?</div>
+    <div class="record-row">
+      <button id="record-btn" title="Click to record">🎤</button>
+      <div class="transcript-box" id="transcript">
+        <span class="placeholder">Hit the mic and describe what you're trying to learn or remember from this video…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div style="display:flex;flex-direction:column;gap:0.75rem">
+    <button id="submit-btn" disabled>Analyze</button>
+    <div id="submit-status"></div>
+  </div>
+</div>
+
+<script>
+  // ── State ───────────────────────────────────────────────────────────────────
+  let videoId = null;
+  let finalTranscript = "";
+  let interimTranscript = "";
+  let mediaRecorder = null;
+  let ws = null;
+  let isRecording = false;
+
+  // ── Elements ─────────────────────────────────────────────────────────────────
+  const dropzone     = document.getElementById("dropzone");
+  const videoInput   = document.getElementById("video-input");
+  const videoStatus  = document.getElementById("video-status");
+  const recordBtn    = document.getElementById("record-btn");
+  const transcriptEl = document.getElementById("transcript");
+  const submitBtn    = document.getElementById("submit-btn");
+  const submitStatus = document.getElementById("submit-status");
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function updateSubmitState() {
+    submitBtn.disabled = !(videoId && (finalTranscript.trim() || interimTranscript.trim()));
+  }
+
+  function renderTranscript() {
+    if (!finalTranscript && !interimTranscript) {
+      transcriptEl.innerHTML = '<span class="placeholder">Hit the mic and describe what you\'re trying to learn or remember from this video…</span>';
+    } else {
+      transcriptEl.innerHTML =
+        (finalTranscript ? `<span class="final">${finalTranscript}</span>` : "") +
+        (interimTranscript ? `<span class="interim"> ${interimTranscript}</span>` : "");
+    }
+    updateSubmitState();
+  }
+
+  // ── Video upload ──────────────────────────────────────────────────────────────
+  async function uploadVideo(file) {
+    if (!file || !file.type.startsWith("video/")) {
+      videoStatus.textContent = "Please select a video file.";
+      videoStatus.className = "error";
+      return;
+    }
+
+    videoStatus.textContent = `Uploading ${file.name}…`;
+    videoStatus.className = "";
+    videoId = null;
+    updateSubmitState();
+
+    const form = new FormData();
+    form.append("video", file);
+
+    try {
+      const res = await fetch("/upload-video", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Upload failed");
+      videoId = data.video_id;
+      videoStatus.textContent = `✓ ${file.name} uploaded`;
+      videoStatus.className = "success";
+      updateSubmitState();
+    } catch (err) {
+      videoStatus.textContent = `Upload failed: ${err.message}`;
+      videoStatus.className = "error";
+    }
+  }
+
+  videoInput.addEventListener("change", e => uploadVideo(e.target.files[0]));
+
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag-over"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("drag-over");
+    uploadVideo(e.dataTransfer.files[0]);
+  });
+
+  // ── Audio recording + Deepgram ────────────────────────────────────────────────
+  async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    ws = new WebSocket(`ws://${location.host}/ws/transcribe`);
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+
+      mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+      mediaRecorder.ondataavailable = e => {
+        if (ws.readyState === WebSocket.OPEN && e.data.size > 0) {
+          ws.send(e.data);
+        }
+      };
+
+      mediaRecorder.start(250); // send a chunk every 250ms
+    };
+
+    ws.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "transcript") {
+        if (msg.is_final) {
+          finalTranscript += (finalTranscript ? " " : "") + msg.text;
+          interimTranscript = "";
+        } else {
+          interimTranscript = msg.text;
+        }
+        renderTranscript();
+      }
+    };
+
+    ws.onerror = () => {
+      videoStatus.textContent = "Deepgram connection error — check your API key.";
+    };
+  }
+
+  function stopRecording() {
+    mediaRecorder?.stop();
+    mediaRecorder?.stream.getTracks().forEach(t => t.stop());
+    mediaRecorder = null;
+
+    // flush interim as final
+    if (interimTranscript) {
+      finalTranscript += (finalTranscript ? " " : "") + interimTranscript;
+      interimTranscript = "";
+    }
+    renderTranscript();
+
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+  }
+
+  recordBtn.addEventListener("click", async () => {
+    if (!isRecording) {
+      try {
+        await startRecording();
+        isRecording = true;
+        recordBtn.textContent = "⏹";
+        recordBtn.classList.add("recording");
+        recordBtn.title = "Click to stop";
+      } catch (err) {
+        alert("Microphone access denied. Please allow mic permissions and try again.");
+      }
+    } else {
+      stopRecording();
+      isRecording = false;
+      recordBtn.textContent = "🎤";
+      recordBtn.classList.remove("recording");
+      recordBtn.title = "Click to record";
+    }
+  });
+
+  // ── Submit ────────────────────────────────────────────────────────────────────
+  submitBtn.addEventListener("click", async () => {
+    if (isRecording) {
+      stopRecording();
+      isRecording = false;
+      recordBtn.textContent = "🎤";
+      recordBtn.classList.remove("recording");
+    }
+
+    const transcript = finalTranscript.trim();
+    if (!videoId || !transcript) return;
+
+    submitBtn.disabled = true;
+    submitStatus.textContent = "Sending to analysis…";
+    submitStatus.className = "";
+
+    try {
+      const res = await fetch("/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_id: videoId, transcript }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Processing failed");
+      submitStatus.textContent = "✓ Queued for analysis — TribeV2 + Claude will process shortly";
+      submitStatus.className = "success";
+    } catch (err) {
+      submitStatus.textContent = `Error: ${err.message}`;
+      submitStatus.className = "error";
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
