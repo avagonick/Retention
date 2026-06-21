@@ -1,14 +1,20 @@
 """
-Band — shared message bus between generator and discriminator agents.
+Band — async message queues for peer-to-peer agent communication.
 
-One Band instance per generation session (keyed by session_id). Each agent
-posts messages to the band and reads the other agent's latest output from it.
-State is persisted to a JSON file so you can inspect/debug any iteration.
+Two unidirectional asyncio.Queues:
+  generator  → discriminator  (band.gen_q)
+  discriminator → generator   (band.disc_q)
+
+Each agent awaits its inbox and sends to the other's inbox directly.
+No orchestrator drives the sequence — agents block on their queue and
+wake up the moment a message arrives.
+
+All messages are also appended to a JSON log file for debugging.
 """
 
+import asyncio
 import json
 from pathlib import Path
-from typing import Any
 
 _STATE_DIR = Path("band_states")
 
@@ -17,68 +23,41 @@ class Band:
     def __init__(self, session_id: str):
         _STATE_DIR.mkdir(exist_ok=True)
         self.session_id = session_id
-        self._path = _STATE_DIR / f"{session_id}.json"
-        self._state = self._load()
+        self._log_path = _STATE_DIR / f"{session_id}.json"
+        self._log: list[dict] = []
 
-    # ------------------------------------------------------------------ I/O
+        # One queue per direction — unbounded, so sends never block
+        self.gen_q: asyncio.Queue = asyncio.Queue()   # generator  → discriminator
+        self.disc_q: asyncio.Queue = asyncio.Queue()  # discriminator → generator
 
-    def _load(self) -> dict:
-        if self._path.exists():
-            return json.loads(self._path.read_text())
-        return {
-            "session_id": self.session_id,
-            "iteration": 0,
-            "messages": [],
-            "current_video": None,
-            "done": False,
-            "final_video": None,
-        }
+    # ---------------------------------------------------------------- send/recv
 
-    def _save(self):
-        self._path.write_text(json.dumps(self._state, indent=2))
+    async def generator_send(self, msg: dict):
+        """Generator posts to discriminator's inbox."""
+        self._append_log("generator", msg)
+        await self.gen_q.put(msg)
 
-    # ---------------------------------------------------- message passing
+    async def discriminator_send(self, msg: dict):
+        """Discriminator posts to generator's inbox."""
+        self._append_log("discriminator", msg)
+        await self.disc_q.put(msg)
 
-    def post(self, role: str, content: dict):
-        """Agent posts a message to the band."""
-        self._state["messages"].append({
-            "role": role,
-            "iteration": self._state["iteration"],
-            "content": content,
-        })
-        self._save()
+    async def generator_recv(self) -> dict:
+        """Generator blocks until discriminator sends something."""
+        return await self.disc_q.get()
 
-    def latest_from(self, role: str) -> dict | None:
-        """Return the most recent message posted by `role`."""
-        msgs = [m for m in self._state["messages"] if m["role"] == role]
-        return msgs[-1]["content"] if msgs else None
+    async def discriminator_recv(self) -> dict:
+        """Discriminator blocks until generator sends something."""
+        return await self.gen_q.get()
 
-    def history(self) -> list[dict]:
-        return list(self._state["messages"])
+    # --------------------------------------------------------------- logging
 
-    # --------------------------------------------------------- state helpers
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._state.get(key, default)
-
-    def set(self, key: str, value: Any):
-        self._state[key] = value
-        self._save()
-
-    def bump(self):
-        """Advance the iteration counter."""
-        self._state["iteration"] += 1
-        self._save()
+    def _append_log(self, sender: str, msg: dict):
+        self._log.append({"from": sender, "msg": msg})
+        self._log_path.write_text(
+            json.dumps({"session_id": self.session_id, "messages": self._log}, indent=2)
+        )
 
     @property
-    def iteration(self) -> int:
-        return self._state["iteration"]
-
-    @property
-    def done(self) -> bool:
-        return self._state["done"]
-
-    def mark_done(self, final_video: str):
-        self._state["done"] = True
-        self._state["final_video"] = final_video
-        self._save()
+    def log_path(self) -> str:
+        return str(self._log_path)

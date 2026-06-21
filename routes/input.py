@@ -89,9 +89,12 @@ async def process(data: dict):
     from agents import run_loop
     from generator import generate  # your existing generator function
 
+    source_video_path = str(UPLOAD_DIR / f"{video_id}.mp4")
+
     result = await run_loop(
         session_id=video_id,
         question=transcript,
+        source_video_path=source_video_path,
         generate_fn=generate,
     )
 
