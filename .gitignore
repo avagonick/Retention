@@ -1,0 +1,30 @@
+# --- Secrets ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- Generated run outputs ---
+out/
+*.npy
+
+# --- Local media (bring your own; sample clips not tracked) ---
+*.mp4
+*.mov
+*.webm
+*.mkv
+
+# --- Pika skills tooling / editor workspace (not part of this pipeline) ---
+.agents/
+.claude/
+skills-lock.json
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
