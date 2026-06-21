@@ -154,6 +154,24 @@ async def generator_agent(
     previous_video_path = source_video_path  # iteration 1: source is the reference
     feedback_text       = ""                 # iteration 1: no prior feedback
 
+    # Score the source video first so iteration 1 knows what's already broken
+    await band.generator_send({
+        "video_path": source_video_path,
+        "iteration":  0,
+        "is_source":  True,
+    })
+    source_evaluation = await band.generator_recv()
+    feedback_text = source_evaluation.get("reason", "")
+
+    messages[0]["content"] = (
+        f"LEARNER QUESTION (transcribed from voice via Deepgram):\n\"{question}\"\n\n"
+        f"SOURCE VIDEO: {source_video_path}\n\n"
+        f"SOURCE VIDEO BRAIN EVALUATION:\n{_format_evaluation(source_evaluation)}\n\n"
+        "This is what's wrong with the original video. Iteration 1: build a video that "
+        "directly answers the learner's question AND fixes the weaknesses shown above. "
+        "Reference the specific seconds where brain scores were worst."
+    )
+
     for iteration in range(1, max_iterations + 1):
         if iteration > 1:
             evaluation = await band.generator_recv()

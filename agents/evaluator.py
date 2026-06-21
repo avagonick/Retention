@@ -392,23 +392,30 @@ async def evaluator_agent(question: str, band: Band) -> dict:
 
         video_path = gen_msg["video_path"]
         iteration  = gen_msg["iteration"]
+        is_source  = gen_msg.get("is_source", False)
         params     = gen_msg.get("params", {})
 
-        logger.info("[evaluator] iteration %d — scoring %s", iteration, video_path)
+        logger.info(
+            "[evaluator] %s — scoring %s",
+            "source video" if is_source else f"iteration {iteration}",
+            video_path,
+        )
 
         # Brain scoring — ground truth
         preds  = await _call_tribe(video_path)
         scores = score_preds(preds)
         reward = scores["reward"]
 
-        all_rewards.append(reward)
-
-        # Track best
-        if reward > best_reward:
-            best_reward     = reward
-            best_video_path = video_path
-            best_scores     = scores
-            logger.info("[evaluator] new best at iteration %d  reward=%.3f", iteration, reward)
+        # Only track best for generated videos, not the source baseline
+        if not is_source:
+            all_rewards.append(reward)
+            if reward > best_reward:
+                best_reward     = reward
+                best_video_path = video_path
+                best_scores     = scores
+                logger.info("[evaluator] new best at iteration %d  reward=%.3f", iteration, reward)
+        else:
+            logger.info("[evaluator] source video baseline reward=%.3f", reward)
 
         # Extract frames (one per second, single ffmpeg pass)
         all_frames = await asyncio.to_thread(extract_all_frames_base64, video_path)
