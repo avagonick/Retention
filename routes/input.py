@@ -86,20 +86,32 @@ async def process(data: dict):
     if not video_id or not transcript:
         return JSONResponse({"error": "video_id and transcript are required"}, status_code=400)
 
-    from agents import run_loop
-    from generate import generate
+    from band_agents import submit_job
 
     source_video_path = str(UPLOAD_DIR / f"{video_id}.mp4")
 
-    result = await run_loop(
+    # Submit to Band AI agent loop (non-blocking — result polled via /result)
+    submit_job(
         session_id=video_id,
         question=transcript,
         source_video_path=source_video_path,
-        generate_fn=generate,
     )
 
     return JSONResponse({
-        "video_id": video_id,
+        "session_id": video_id,
         "question": transcript,
-        **result,
+        "status": "started",
+        "band_url": f"https://app.band.ai/chat/{os.getenv('BAND_CHAT_ID', '')}",
+        "result_url": f"/result/{video_id}",
     })
+
+
+@router.get("/result/{session_id}")
+async def get_result(session_id: str):
+    from band_agents import get_result
+
+    result = get_result(session_id)
+    if result is None:
+        return JSONResponse({"session_id": session_id, "status": "running"}, status_code=202)
+
+    return JSONResponse(result)

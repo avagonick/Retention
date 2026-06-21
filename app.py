@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 import aiofiles
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -8,7 +11,16 @@ from routes.input import router as input_router
 
 load_dotenv()
 
-app = FastAPI(title="Retention")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start Band AI agents in background when server boots
+    from band_agents import start_agents
+    asyncio.create_task(start_agents(), name="band-agents")
+    yield
+
+
+app = FastAPI(title="Retention", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(input_router)
 
