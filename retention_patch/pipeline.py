@@ -354,19 +354,23 @@ def _call_deepgram_tts_api(prompt: dict[str, Any]) -> str | None:
         return None
 
 def _combine_video_and_audio(video_path: str, audio_path: str) -> str | None:
-    """Combines video and audio using ffmpeg and returns the path to the combined file."""
+    """Mux the narration audio onto the video track; return the combined path.
+
+    Uses a stream mux (video from input 0, audio from input 1), NOT concat —
+    concat would play them one-after-another instead of overlaying the audio.
+    """
     if not (ffmpeg and video_path and audio_path):
         return None
 
     output_path = f"/tmp/combined_video_{uuid.uuid4()}.mp4"
     try:
-        input_video = ffmpeg.input(video_path)
-        input_audio = ffmpeg.input(audio_path)
+        in_v = ffmpeg.input(video_path)
+        in_a = ffmpeg.input(audio_path)
         (
             ffmpeg
-            .concat(input_video, input_audio, v=1, a=1)
-            .output(output_path)
-            .run(overwrite_output=True)
+            .output(in_v.video, in_a.audio, output_path,
+                    vcodec="copy", acodec="aac", shortest=None)
+            .run(overwrite_output=True, quiet=True)
         )
         return output_path
     except Exception:
