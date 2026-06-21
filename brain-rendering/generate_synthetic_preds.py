@@ -4,7 +4,7 @@
 This produces the exact shape TRIBE v2 emits — (n_seconds, 20484) on the
 fsaverage5 surface (10242 vertices/hemisphere) — filled with smooth, moving
 hotspots. It is NOT real brain data; it just lets you confirm that
-`make_brain_video.py` + ffmpeg render and sync correctly on your machine.
+`brain/render.py` + ffmpeg render and sync correctly on your machine.
 
     python generate_synthetic_preds.py --seconds 52 --out out
 """

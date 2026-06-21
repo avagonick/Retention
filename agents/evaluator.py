@@ -59,7 +59,8 @@ WHY LLM + BRAIN SCORES TOGETHER?
   points — too much to parse, simplify to one concept."
 
 Set env vars:
-  TRIBE_ENDPOINT        — Lightning AI endpoint
+  TRIBE_BASE_URL        — Lightning AI base URL (TRIBE_ENDPOINT also accepted)
+  TRIBE_API_TOKEN       — X-API-Token for the TRIBE endpoint
   TOKEN_ROUTER_API_KEY  — TokenRouter sk-... key
 """
 
