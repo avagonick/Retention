@@ -87,7 +87,7 @@ async def process(data: dict):
         return JSONResponse({"error": "video_id and transcript are required"}, status_code=400)
 
     from agents import run_loop
-    from generator import generate  # your existing generator function
+    from generate import generate
 
     source_video_path = str(UPLOAD_DIR / f"{video_id}.mp4")
 

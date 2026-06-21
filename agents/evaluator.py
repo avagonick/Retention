@@ -1,12 +1,12 @@
 """
-Discriminator agent — brain scoring + vision panel feedback for every iteration.
+Evaluator agent — brain scoring + vision panel feedback for every iteration.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WHAT THE DISCRIMINATOR DOES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Runs for every iteration. Always. No early stopping — we're doing
-best-of-N and the discriminator is the scorer, not the judge.
+best-of-N and the evaluator is the scorer, not the judge.
 
 Per iteration:
 
@@ -341,7 +341,7 @@ async def _panel_feedback(
     judges = [r for r in results if not isinstance(r, Exception)]
     for model, r in zip(_PANEL_MODELS, results):
         if isinstance(r, Exception):
-            logger.warning("[discriminator] judge %s failed: %s", model, r)
+            logger.warning("[evaluator] judge %s failed: %s", model, r)
 
     if not judges:
         raise RuntimeError("All panel judges failed — check TOKEN_ROUTER_API_KEY")
@@ -352,7 +352,7 @@ async def _panel_feedback(
         feedback    = synthesized["feedback"]
         reason      = synthesized["reason"]
     except Exception as e:
-        logger.warning("[discriminator] synthesis failed (%s), falling back to naive merge", e)
+        logger.warning("[evaluator] synthesis failed (%s), falling back to naive merge", e)
         feedback = _merge_feedback([j["feedback"] for j in judges])
         reason   = " | ".join(j["reason"] for j in judges)
 
@@ -365,7 +365,7 @@ async def _panel_feedback(
 
 # ── Peer agent coroutine ───────────────────────────────────────────────────────
 
-async def discriminator_agent(question: str, band: Band) -> dict:
+async def evaluator_agent(question: str, band: Band) -> dict:
     """
     Scores every generated video with TRIBE and sends panel feedback to the
     generator. Runs for all N iterations. Tracks the best-scoring video.
@@ -384,17 +384,17 @@ async def discriminator_agent(question: str, band: Band) -> dict:
     all_rewards:     list[float] = []
 
     while True:
-        gen_msg = await band.discriminator_recv()
+        gen_msg = await band.evaluator_recv()
 
         if gen_msg.get("done"):
-            logger.info("[discriminator] all iterations complete")
+            logger.info("[evaluator] all iterations complete")
             break
 
         video_path = gen_msg["video_path"]
         iteration  = gen_msg["iteration"]
         params     = gen_msg.get("params", {})
 
-        logger.info("[discriminator] iteration %d — scoring %s", iteration, video_path)
+        logger.info("[evaluator] iteration %d — scoring %s", iteration, video_path)
 
         # Brain scoring — ground truth
         preds  = await _call_tribe(video_path)
@@ -408,7 +408,7 @@ async def discriminator_agent(question: str, band: Band) -> dict:
             best_reward     = reward
             best_video_path = video_path
             best_scores     = scores
-            logger.info("[discriminator] new best at iteration %d  reward=%.3f", iteration, reward)
+            logger.info("[evaluator] new best at iteration %d  reward=%.3f", iteration, reward)
 
         # Extract frames (one per second, single ffmpeg pass)
         all_frames = await asyncio.to_thread(extract_all_frames_base64, video_path)
@@ -423,11 +423,11 @@ async def discriminator_agent(question: str, band: Band) -> dict:
         history.append(judgment)
 
         logger.info(
-            "[discriminator] iteration %d  reward=%.3f  (best so far: %.3f)",
+            "[evaluator] iteration %d  reward=%.3f  (best so far: %.3f)",
             iteration, reward, best_reward,
         )
 
-        await band.discriminator_send(judgment)
+        await band.evaluator_send(judgment)
 
     return {
         "best_video_path": best_video_path,

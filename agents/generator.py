@@ -1,19 +1,20 @@
 """
 Generator agent — a Claude conversation that decides HOW to generate each video.
 
-Inputs (all three fed into each Claude turn):
-  source_video_path — the original video the user uploaded (source content)
-  question          — voice input transcribed to text (what to teach)
-  brain feedback    — per-second fMRI scores from the discriminator (what to fix)
+Three inputs every iteration:
+  1. question          — learner's voice input transcribed by Deepgram (always present)
+  2. previous_video    — the video generated last iteration (source video on iteration 1)
+  3. feedback          — evaluator's improvement text (empty on iteration 1)
 
-Claude reasons over all three to choose creative parameters, then calls
-generate_fn as a tool. The conversation grows over iterations.
+Claude reasons over all three and calls generate_fn as a tool. The conversation
+grows across iterations so Claude can see patterns across all prior attempts.
 
 Expected generate_fn signature:
     def generate_fn(
-        question: str,
-        source_video_path: str,
+        question: str,            # Deepgram transcript
+        previous_video_path: str, # last generated video (or source on iter 1)
         iteration: int,
+        feedback: str,            # evaluator's improvement instruction (empty on iter 1)
         style: str,
         pacing: str,
         visual_complexity: str,
@@ -46,7 +47,8 @@ ITERATION 1 — you have two inputs:
   they expressing, what do they need to see to understand it?
 
 ITERATION 2+ — you also have:
-  3. BRAIN FEEDBACK — per-second fMRI scores from the last video (what to fix)
+  3. PREVIOUS VIDEO — path to the video you generated last iteration
+  4. EVALUATOR FEEDBACK — brain scores + panel diagnosis of what to fix
 
   How brain scores map to creative choices:
   - High DMN at a specific second → viewer's mind wandered there → add a visual hook or
@@ -104,8 +106,9 @@ _GENERATE_TOOL = {
     },
 }
 
-def _format_brain_feedback(feedback: dict) -> str:
-    scores = feedback["scores"]
+
+def _format_evaluation(evaluation: dict) -> str:
+    scores  = evaluation["scores"]
     per_sec = scores.get("per_second", [])
     per_sec_str = "\n".join(
         f"  t={r['second']:2d}s  hipp={r['hippocampus']:+.3f}  "
@@ -123,7 +126,7 @@ def _format_brain_feedback(feedback: dict) -> str:
         f"Worst DMN spike at second {scores.get('peak_dmn_second', '?')}s  |  "
         f"Best moment at second {scores.get('peak_memory_second', '?')}s\n"
         f"Per-second:\n{per_sec_str}\n"
-        f"Feedback: {feedback['reason']}"
+        f"Feedback: {evaluation['reason']}"
     )
 
 
@@ -147,16 +150,20 @@ async def generator_agent(
             ),
         },
     ]
-    final_video: str | None = None
+
+    previous_video_path = source_video_path  # iteration 1: source is the reference
+    feedback_text       = ""                 # iteration 1: no prior feedback
 
     for iteration in range(1, max_iterations + 1):
         if iteration > 1:
-            feedback = await band.generator_recv()
+            evaluation = await band.generator_recv()
+            feedback_text = evaluation.get("reason", "")
             messages.append({
                 "role": "user",
                 "content": (
-                    f"Iteration {iteration} — here is the brain data from your last video:\n\n"
-                    f"{_format_brain_feedback(feedback)}\n\n"
+                    f"Iteration {iteration} — evaluation of your last video:\n\n"
+                    f"PREVIOUS VIDEO: {previous_video_path}\n\n"
+                    f"{_format_evaluation(evaluation)}\n\n"
                     "Generate an improved video. Reference specific seconds where scores were bad."
                 ),
             })
@@ -178,25 +185,27 @@ async def generator_agent(
         video_path: str = await asyncio.to_thread(
             generate_fn,
             question=question,
-            source_video_path=source_video_path,
+            previous_video_path=previous_video_path,
             iteration=iteration,
+            feedback=feedback_text,
             **params,
         )
-        final_video = video_path
 
         messages.append({
             "role": "user",
             "content": [{"type": "tool_result", "tool_use_id": tool_block.id, "content": video_path}],
         })
 
+        previous_video_path = video_path  # next iteration references this video
+
         await band.generator_send({
             "video_path": video_path,
-            "iteration": iteration,
-            "params": params,
+            "iteration":  iteration,
+            "params":     params,
         })
 
         if iteration == max_iterations:
             await band.generator_send({"done": True})
             break
 
-    return final_video
+    return previous_video_path

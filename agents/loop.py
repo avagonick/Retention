@@ -14,7 +14,7 @@ from typing import Callable
 
 from .band import Band
 from .generator import generator_agent
-from .discriminator import discriminator_agent
+from .evaluator import evaluator_agent
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +34,12 @@ async def run_loop(
         generator_agent(question, source_video_path, band, generate_fn, max_iterations),
         name="generator",
     )
-    disc_task = asyncio.create_task(
-        discriminator_agent(question, band),
-        name="discriminator",
+    eval_task = asyncio.create_task(
+        evaluator_agent(question, band),
+        name="evaluator",
     )
 
-    _, disc_result = await asyncio.gather(gen_task, disc_task)
+    _, disc_result = await asyncio.gather(gen_task, eval_task)
 
     best_video  = disc_result["best_video_path"]
     best_reward = disc_result["best_reward"]

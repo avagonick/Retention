@@ -2,8 +2,8 @@
 Band — async message queues for peer-to-peer agent communication.
 
 Two unidirectional asyncio.Queues:
-  generator  → discriminator  (band.gen_q)
-  discriminator → generator   (band.disc_q)
+  generator → evaluator  (band.gen_q)
+  evaluator → generator  (band.eval_q)
 
 Each agent awaits its inbox and sends to the other's inbox directly.
 No orchestrator drives the sequence — agents block on their queue and
@@ -27,27 +27,27 @@ class Band:
         self._log: list[dict] = []
 
         # One queue per direction — unbounded, so sends never block
-        self.gen_q: asyncio.Queue = asyncio.Queue()   # generator  → discriminator
-        self.disc_q: asyncio.Queue = asyncio.Queue()  # discriminator → generator
+        self.gen_q: asyncio.Queue = asyncio.Queue()   # generator → evaluator
+        self.eval_q: asyncio.Queue = asyncio.Queue()  # evaluator → generator
 
     # ---------------------------------------------------------------- send/recv
 
     async def generator_send(self, msg: dict):
-        """Generator posts to discriminator's inbox."""
+        """Generator posts to evaluator's inbox."""
         self._append_log("generator", msg)
         await self.gen_q.put(msg)
 
-    async def discriminator_send(self, msg: dict):
-        """Discriminator posts to generator's inbox."""
-        self._append_log("discriminator", msg)
-        await self.disc_q.put(msg)
+    async def evaluator_send(self, msg: dict):
+        """Evaluator posts to generator's inbox."""
+        self._append_log("evaluator", msg)
+        await self.eval_q.put(msg)
 
     async def generator_recv(self) -> dict:
-        """Generator blocks until discriminator sends something."""
-        return await self.disc_q.get()
+        """Generator blocks until evaluator sends something."""
+        return await self.eval_q.get()
 
-    async def discriminator_recv(self) -> dict:
-        """Discriminator blocks until generator sends something."""
+    async def evaluator_recv(self) -> dict:
+        """Evaluator blocks until generator sends something."""
         return await self.gen_q.get()
 
     # --------------------------------------------------------------- logging
