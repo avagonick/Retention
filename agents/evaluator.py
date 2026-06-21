@@ -94,29 +94,29 @@ _PANEL_MODELS = [
 ]
 
 _SYSTEM = """\
-You are evaluating an AI-generated educational video for memory retention quality.
+You are evaluating an AI-generated educational video for cognitive engagement quality.
 You have access to fMRI brain activation data AND visual frames from the video.
 
-Four cortical regions (Destrieux atlas, fsaverage5 surface):
-  hippocampus (parahippocampal cortex)   — HIGH is good: memory encoding
-  left_pfc    (inferior + middle frontal) — HIGH is good: semantic depth
-  amygdala    (temporal pole)             — HIGH is good: emotional engagement
-  dmn         (PCC + precuneus + mPFC)    — LOW is good: not mind-wandering
+METRIC: engagement = mean|z|(association cortex) / mean|z|(primary sensory cortex)
 
-  reward = hippocampus + left_pfc + amygdala − 2.0 × dmn
-  Higher reward = better memory retention.
+  Association cortex (~17,700 vertices): all higher-order cortex — meaning, memory, attention.
+  Primary sensory cortex (~970 vertices): V1 + A1 — raw visual/audio perception only.
+
+  Higher engagement = brain is actively understanding, not just passively watching.
+  The score is amplitude-invariant (ratio cancels global gain) and gaming-resistant
+  (flashy, empty content drives sensory cortex up, which lowers the ratio).
 
 You will see:
-  1. The per-second brain score table
-  2. A frame from the WORST second (peak DMN — viewer zoned out here)
-  3. A frame from the BEST second (peak reward — best encoding moment)
+  1. The per-second engagement table (association, sensory, ratio per second)
+  2. A frame from the WORST second (peak sensory — viewer is perceiving but not encoding)
+  3. A frame from the BEST second (peak engagement — deepest meaning-making)
 
-Use the frames to understand WHY the brain responded that way.
-Reference what you see in the frames when explaining your reason.
+Use the frames to understand WHY the brain shifted between passive perception and
+active understanding. Reference what you see in the frames in your explanation.
 
 Respond with valid JSON only — no markdown:
 {
-  "reason": "<one sentence — cite what you see in the frame AND the brain score>",
+  "reason": "<one sentence — cite what you see in the frame AND the engagement score>",
   "feedback": {
     "pacing": "faster" | "slower" | "ok",
     "visual_complexity": "increase" | "decrease" | "ok",
@@ -159,16 +159,14 @@ def _build_text_prompt(
         f"Iteration: {iteration} of 5\n"
         f"Generator params: {json.dumps(params)}\n"
         f"{prior}\n"
-        f"Overall fMRI means:  "
-        f"hipp={scores['hippocampus']:.3f}  "
-        f"pfc={scores['left_pfc']:.3f}  "
-        f"amyg={scores['amygdala']:.3f}  "
-        f"dmn={scores['dmn']:.3f}  "
-        f"reward={scores['reward']:.3f}\n"
-        f"Worst second (peak DMN): t={scores['peak_dmn_second']}s  |  "
-        f"Best second (peak reward): t={scores['peak_memory_second']}s\n\n"
-        "Below: each second's brain score followed by the video frame at that second.\n"
-        "Use this to explain exactly WHY the brain responded that way and what to change."
+        f"Overall means:  "
+        f"association={scores['association_cortex']:.3f}  "
+        f"sensory={scores['primary_sensory']:.3f}  "
+        f"engagement={scores['reward']:.3f}\n"
+        f"Worst second (peak sensory): t={scores['peak_sensory_second']}s  |  "
+        f"Best second (peak engagement): t={scores['peak_memory_second']}s\n\n"
+        "Below: each second's engagement score followed by the video frame at that second.\n"
+        "Use this to explain exactly WHY the brain shifted between passive perception and active understanding."
     )
 
 
@@ -191,11 +189,9 @@ def _build_vision_messages(
         s = score_by_second.get(second, {})
         label = (
             f"t={second}s — "
-            f"reward={s.get('reward', '?'):+.3f}  "
-            f"hipp={s.get('hippocampus', '?'):+.3f}  "
-            f"pfc={s.get('left_pfc', '?'):+.3f}  "
-            f"amyg={s.get('amygdala', '?'):+.3f}  "
-            f"dmn={s.get('dmn', '?'):+.3f}"
+            f"engagement={s.get('reward', '?'):.3f}  "
+            f"assoc={s.get('association_cortex', '?'):.3f}  "
+            f"sensory={s.get('primary_sensory', '?'):.3f}"
         )
         content.append({"type": "text", "text": label})
         content.append({
@@ -287,14 +283,12 @@ async def _synthesize_feedback(
     )
 
     brain_context = (
-        f"fMRI context for this iteration:\n"
-        f"  reward={scores['reward']:.4f}  "
-        f"hipp={scores['hippocampus']:.4f}  "
-        f"pfc={scores['left_pfc']:.4f}  "
-        f"amyg={scores['amygdala']:.4f}  "
-        f"dmn={scores['dmn']:.4f}\n"
-        f"  Peak DMN (mind-wandering) at t={scores['peak_dmn_second']}s\n"
-        f"  Peak reward (best encoding) at t={scores['peak_memory_second']}s"
+        f"Engagement context for this iteration:\n"
+        f"  engagement={scores['reward']:.4f}  "
+        f"association={scores['association_cortex']:.4f}  "
+        f"sensory={scores['primary_sensory']:.4f}\n"
+        f"  Peak sensory (passive perception) at t={scores['peak_sensory_second']}s\n"
+        f"  Peak engagement (active understanding) at t={scores['peak_memory_second']}s"
     )
 
     user_msg = f"{brain_context}\n\n{evaluator_block}\n\nSynthesize into one coherent feedback."
