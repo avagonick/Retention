@@ -10,7 +10,7 @@ compensate for the hemodynamic lag, so prediction frame `i` lines up with second
 
 This stage is the heavy one (loads V-JEPA2 + Wav2Vec-BERT + LLaMA-3.2 + DINOv2 +
 the TRIBE transformer). Run it on a GPU box / Colab. It writes two small files
-that Stage 2 (`make_brain_video.py`) consumes:
+that the renderer (`brain/render.py`) consumes:
 
     out/preds.npy       float32 array, shape (n_seconds, ~20484)
     out/captions.json   list[str], the transcribed words shown at each second
@@ -60,7 +60,7 @@ def main() -> None:
     np.save(out / "preds.npy", preds)
     (out / "captions.json").write_text(json.dumps(captions))
     print(f"Saved {out/'preds.npy'} and {out/'captions.json'}")
-    print("Next: python make_brain_video.py --video", args.video, "--out", args.out)
+    print("Next: render", out / "preds.npy", "with brain/render.py")
 
 
 if __name__ == "__main__":

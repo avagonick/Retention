@@ -59,7 +59,8 @@ WHY LLM + BRAIN SCORES TOGETHER?
   points — too much to parse, simplify to one concept."
 
 Set env vars:
-  TRIBE_ENDPOINT        — Lightning AI endpoint
+  TRIBE_BASE_URL        — Lightning AI base URL (TRIBE_ENDPOINT also accepted)
+  TRIBE_API_TOKEN       — X-API-Token for the TRIBE endpoint
   TOKEN_ROUTER_API_KEY  — TokenRouter sk-... key
 """
 
@@ -75,11 +76,15 @@ from openai import AsyncOpenAI
 
 from brain.atlas import score_preds
 from brain.frames import extract_all_frames_base64
+from brain.tribe_client import score as tribe_score
 from .band import Band
 
 logger = logging.getLogger(__name__)
 
-TRIBE_ENDPOINT = os.getenv("TRIBE_ENDPOINT", "")
+# Score via the robust client in brain/tribe_client.py. Accept either env name;
+# strip a trailing /score so the client can append its own /score and /health.
+TRIBE_BASE_URL = (os.getenv("TRIBE_BASE_URL") or os.getenv("TRIBE_ENDPOINT", "")).removesuffix("/score").rstrip("/")
+TRIBE_API_TOKEN = os.getenv("TRIBE_API_TOKEN", "")
 
 _TOKEN_ROUTER_URL = "https://api.tokenrouter.com/v1"
 _PANEL_MODELS = [
@@ -126,17 +131,11 @@ Respond with valid JSON only — no markdown:
 # ── TRIBE inference ────────────────────────────────────────────────────────────
 
 async def _call_tribe(video_path: str) -> np.ndarray:
-    path = Path(video_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Video not found: {video_path}")
-    async with httpx.AsyncClient(timeout=300) as client:
-        with path.open("rb") as f:
-            resp = await client.post(
-                TRIBE_ENDPOINT,
-                files={"video": (path.name, f, "video/mp4")},
-            )
-        resp.raise_for_status()
-    return np.array(resp.json()["data"], dtype=np.float32)
+    # brain.tribe_client.score is sync (requests) — run it off the event loop.
+    preds, _times = await asyncio.to_thread(
+        tribe_score, video_path, TRIBE_BASE_URL, TRIBE_API_TOKEN
+    )
+    return preds
 
 
 # ── LLM vision panel via TokenRouter ──────────────────────────────────────────
