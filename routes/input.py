@@ -86,13 +86,17 @@ async def process(data: dict):
     if not video_id or not transcript:
         return JSONResponse({"error": "video_id and transcript are required"}, status_code=400)
 
-    payload = {
+    from agents import run_loop
+    from generator import generate  # your existing generator function
+
+    result = await run_loop(
+        session_id=video_id,
+        question=transcript,
+        generate_fn=generate,
+    )
+
+    return JSONResponse({
         "video_id": video_id,
-        "transcript": transcript,
-        "status": "queued",
-    }
-
-    # TODO: dispatch to TribeV2 (video_id) and Claude (transcript)
-    print(f"[process] payload ready: {json.dumps(payload, indent=2)}")
-
-    return JSONResponse(payload)
+        "question": transcript,
+        **result,
+    })
