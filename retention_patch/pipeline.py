@@ -24,9 +24,10 @@ except Exception:
     anthropic = None
 
 try:
-    from deepgram import DeepgramClient
-except Exception: 
+    from deepgram import DeepgramClient, SpeakOptions
+except Exception:
     DeepgramClient = None
+    SpeakOptions = None
 
 try:
     from dotenv import load_dotenv
@@ -243,6 +244,7 @@ Return ONLY valid JSON in exactly this shape:
 # ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
+import time
 import uuid
 
 try:
@@ -251,39 +253,103 @@ except ImportError:
     ffmpeg = None
 
 try:
-    import pika
+    import requests
 except ImportError:
-    pika = None
+    requests = None
+
+PIKA_API_BASE = os.getenv("PIKA_API_BASE", "https://api.pika.art/v1")
+_PIKA_MODEL = "pika-2.2"
+_PIKA_POLL_INTERVAL = 5
+_PIKA_POLL_TIMEOUT = 600
 
 def _call_pika_api(prompt: str) -> str | None:
-    """Calls Pika API to generate a video and returns the path to the video file."""
-    if not pika:
+    """Calls the Pika API to generate a video and returns the path to the video file.
+
+    Submits a text-to-video job, polls until it finishes, then downloads the
+    rendered mp4 to a temp path.
+    """
+    api_key = os.getenv("PIKA_API_KEY")
+    if not (requests and api_key):
         return None
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
     try:
-        # This is a placeholder for the actual Pika API call
+        # 1) submit the generation job
+        resp = requests.post(
+            f"{PIKA_API_BASE}/generate",
+            headers=headers,
+            json={
+                "model": _PIKA_MODEL,
+                "promptText": prompt,
+                "aspectRatio": "16:9",
+                "resolution": "1080p",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        job_id = resp.json()["id"]
+
+        # 2) poll until the render completes
+        deadline = time.time() + _PIKA_POLL_TIMEOUT
+        video_url = None
+        while time.time() < deadline:
+            status_resp = requests.get(
+                f"{PIKA_API_BASE}/generate/{job_id}",
+                headers=headers,
+                timeout=30,
+            )
+            status_resp.raise_for_status()
+            data = status_resp.json()
+            status = data.get("status")
+            if status == "finished":
+                video_url = data.get("videoUrl") or data.get("url")
+                break
+            if status in ("failed", "cancelled"):
+                return None
+            time.sleep(_PIKA_POLL_INTERVAL)
+
+        if not video_url:
+            return None
+
+        # 3) download the rendered clip
         video_path = f"/tmp/pika_video_{uuid.uuid4()}.mp4"
-        # with open(video_path, "wb") as f:
-        #     f.write(pika.generate(prompt))
+        with requests.get(video_url, stream=True, timeout=120) as dl:
+            dl.raise_for_status()
+            with open(video_path, "wb") as f:
+                for chunk in dl.iter_content(chunk_size=1 << 16):
+                    f.write(chunk)
         return video_path
     except Exception:
         return None
 
 def _call_deepgram_tts_api(prompt: dict[str, Any]) -> str | None:
-    """Calls Deepgram TTS API to generate audio and returns the path to the audio file."""
+    """Calls the Deepgram Aura TTS API to synthesize narration audio.
+
+    Returns the path to the rendered mp3 file.
+    """
     api_key = os.getenv("DEEPGRAM_API_KEY")
-    if not (DeepgramClient and api_key):
+    text = (prompt or {}).get("text", "").strip()
+    if not (DeepgramClient and SpeakOptions and api_key and text):
         return None
 
     try:
         dg = DeepgramClient(api_key)
-        response = dg.speak.v1.save(
-            f"/tmp/deepgram_audio_{uuid.uuid4()}.mp3",
-            {"text": prompt.get("text", "")},
-            model=prompt.get("model"),
-            voice=prompt.get("voice"),
-            speed=prompt.get("speed"),
+        options = SpeakOptions(
+            model=prompt.get("model", "aura-2-thalia-en"),
+            encoding="mp3",
+            sample_rate=24000,
         )
-        return response.filename
+        audio_path = f"/tmp/deepgram_audio_{uuid.uuid4()}.mp3"
+        response = dg.speak.rest.v("1").save(
+            audio_path,
+            {"text": text},
+            options,
+        )
+        return getattr(response, "filename", audio_path)
     except Exception:
         return None
 
@@ -357,7 +423,6 @@ def generate_retention_patch(
 
 if __name__ == "__main__":
     # Smoke test with no external services: runs entirely on demo fixtures.
-    # This will now return None because the placeholder functions will fail.
     out_path = generate_retention_patch(
         video_path="uploads/demo_lesson.mp4",
         tribe_output={"engagement": [0.9, 0.8, 0.7, 0.3, 0.2, 0.25, 0.6, 0.8]},
