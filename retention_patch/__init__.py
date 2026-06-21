@@ -10,8 +10,7 @@ needed to regenerate its weakest moment for better cognitive retention.
         user_intent="make the division explanation stickier for 4th graders",
     )
 
-    patch["pika_prompt"]      # -> str, feed to Pika generate_video
-    patch["deepgram_prompt"]  # -> {"text", "model", ...}, feed to Deepgram TTS
+    output is mp4 path of the output mp4 video
 """
 
 from .pipeline import RetentionPatch, generate_retention_patch

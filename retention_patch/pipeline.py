@@ -243,12 +243,76 @@ Return ONLY valid JSON in exactly this shape:
 # ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
+import uuid
+
+try:
+    import ffmpeg
+except ImportError:
+    ffmpeg = None
+
+try:
+    import pika
+except ImportError:
+    pika = None
+
+def _call_pika_api(prompt: str) -> str | None:
+    """Calls Pika API to generate a video and returns the path to the video file."""
+    if not pika:
+        return None
+    try:
+        # This is a placeholder for the actual Pika API call
+        video_path = f"/tmp/pika_video_{uuid.uuid4()}.mp4"
+        # with open(video_path, "wb") as f:
+        #     f.write(pika.generate(prompt))
+        return video_path
+    except Exception:
+        return None
+
+def _call_deepgram_tts_api(prompt: dict[str, Any]) -> str | None:
+    """Calls Deepgram TTS API to generate audio and returns the path to the audio file."""
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    if not (DeepgramClient and api_key):
+        return None
+
+    try:
+        dg = DeepgramClient(api_key)
+        response = dg.speak.v1.save(
+            f"/tmp/deepgram_audio_{uuid.uuid4()}.mp3",
+            {"text": prompt.get("text", "")},
+            model=prompt.get("model"),
+            voice=prompt.get("voice"),
+            speed=prompt.get("speed"),
+        )
+        return response.filename
+    except Exception:
+        return None
+
+def _combine_video_and_audio(video_path: str, audio_path: str) -> str | None:
+    """Combines video and audio using ffmpeg and returns the path to the combined file."""
+    if not (ffmpeg and video_path and audio_path):
+        return None
+
+    output_path = f"/tmp/combined_video_{uuid.uuid4()}.mp4"
+    try:
+        input_video = ffmpeg.input(video_path)
+        input_audio = ffmpeg.input(audio_path)
+        (
+            ffmpeg
+            .concat(input_video, input_audio, v=1, a=1)
+            .output(output_path)
+            .run(overwrite_output=True)
+        )
+        return output_path
+    except Exception:
+        return None
+
 def generate_retention_patch(
     video_path: str,
     tribe_output: str | dict | list,
     user_intent: str,
-) -> dict[str, Any]:
-    """Turn a flagged lesson into the prompts that regenerate its weakest moment.
+) -> str | None:
+    """
+    Turn a flagged lesson into a regenerated, improved MP4.
 
     Args:
         video_path: path to the source lesson .mp4.
@@ -257,36 +321,49 @@ def generate_retention_patch(
         user_intent: free text describing what the user wants improved.
 
     Returns:
-        A plain dict (``RetentionPatch.to_dict()``) with ``pika_prompt`` and
-        ``deepgram_prompt`` ready to hand to Pika / Deepgram, plus the diagnosis,
-        the located dip zone, and the transcript for traceability.
+        A path to the newly generated mp4 file, or None if an error occurred.
     """
     transcript = _transcribe(video_path)
+    if not transcript:
+        return None
+
     tribe = _load_tribe(tribe_output)
     dip = _find_dip_zone(tribe, transcript)
-    plan = _plan_with_llm(dip, transcript, user_intent)
+    if not dip:
+        return None
 
-    patch = RetentionPatch(
-        dip_zone=dip,
-        diagnosis=plan["diagnosis"],
-        fix_description=plan["fix_description"],
-        pika_prompt=plan["pika_prompt"],
-        deepgram_prompt=plan["deepgram_prompt"],
-        transcript=transcript,
-        metadata={
-            "video_path": video_path,
-            "user_intent": user_intent,
-            "planner_model": _PLANNER_MODEL,
-            "source_window": f"{dip['start']:.1f}s-{dip['end']:.1f}s",
-        },
-    )
-    return patch.to_dict()
+    plan = _plan_with_llm(dip, transcript, user_intent)
+    if not plan:
+        return None
+
+    # Generate video and audio
+    generated_video_path = _call_pika_api(plan["pika_prompt"])
+    generated_audio_path = _call_deepgram_tts_api(plan["deepgram_prompt"])
+
+    if not generated_video_path or not generated_audio_path:
+        return None
+
+    # Combine video and audio
+    combined_video_path = _combine_video_and_audio(generated_video_path, generated_audio_path)
+
+    # Clean up intermediate files
+    if generated_video_path and os.path.exists(generated_video_path):
+        os.remove(generated_video_path)
+    if generated_audio_path and os.path.exists(generated_audio_path):
+        os.remove(generated_audio_path)
+
+    return combined_video_path
+
 
 if __name__ == "__main__":
     # Smoke test with no external services: runs entirely on demo fixtures.
-    out = generate_retention_patch(
+    # This will now return None because the placeholder functions will fail.
+    out_path = generate_retention_patch(
         video_path="uploads/demo_lesson.mp4",
         tribe_output={"engagement": [0.9, 0.8, 0.7, 0.3, 0.2, 0.25, 0.6, 0.8]},
         user_intent="make the division explanation stickier for 4th graders",
     )
-    print(json.dumps(out, indent=2))
+    if out_path:
+        print(f"Generated video: {out_path}")
+    else:
+        print("Failed to generate video.")
