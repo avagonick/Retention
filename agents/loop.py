@@ -1,24 +1,20 @@
 """
-run_loop — orchestrates the generator-discriminator iteration.
+run_loop — launches generator and discriminator as concurrent peer agents.
 
-Usage:
-    from agents import run_loop
+Best-of-5 strategy: always run all max_iterations, score each with TRIBE,
+return the video that produced the highest brain reward.
 
-    result = await run_loop(
-        session_id="abc123",
-        question="Why does the mitochondria produce ATP?",
-        generate_fn=my_pika_generator,
-        max_iterations=5,
-    )
-    print(result["final_video"], result["iterations"])
+No threshold, no stopping condition — the discriminator scores every
+iteration and tracks the best. loop.py just collects the result.
 """
 
+import asyncio
 import logging
 from typing import Callable
 
 from .band import Band
-from .generator import GeneratorAgent
-from .discriminator import DiscriminatorAgent
+from .generator import generator_agent
+from .discriminator import discriminator_agent
 
 logger = logging.getLogger(__name__)
 
@@ -26,49 +22,40 @@ logger = logging.getLogger(__name__)
 async def run_loop(
     session_id: str,
     question: str,
+    source_video_path: str,
     generate_fn: Callable,
     max_iterations: int = 5,
 ) -> dict:
-    """
-    Runs the generator → discriminator loop until the LLM judge approves or
-    max_iterations is reached.
-
-    Returns:
-        {
-          "final_video": str,       # URL/path to best video
-          "iterations": int,        # how many rounds were run
-          "approved": bool,         # whether discriminator approved
-          "band_path": str,         # path to full band state JSON for inspection
-        }
-    """
     band = Band(session_id)
-    generator = GeneratorAgent(band, generate_fn)
-    discriminator = DiscriminatorAgent(band)
 
-    approved = False
+    logger.info("[loop] starting session %s — %d iterations — '%s'", session_id, max_iterations, question)
 
-    for _ in range(max_iterations):
-        band.bump()
-        logger.info("[loop] iteration %d / %d", band.iteration, max_iterations)
+    gen_task = asyncio.create_task(
+        generator_agent(question, source_video_path, band, generate_fn, max_iterations),
+        name="generator",
+    )
+    disc_task = asyncio.create_task(
+        discriminator_agent(question, band),
+        name="discriminator",
+    )
 
-        # Generate
-        video_url = generator.run(question)
-        logger.info("[loop] generator → %s", video_url)
+    _, disc_result = await asyncio.gather(gen_task, disc_task)
 
-        # Evaluate
-        judgment = await discriminator.run(question)
-        logger.info("[loop] discriminator → %s (%s)", judgment["verdict"], judgment["reason"])
+    best_video  = disc_result["best_video_path"]
+    best_reward = disc_result["best_reward"]
+    all_rewards = disc_result["all_rewards"]
+    best_iter   = all_rewards.index(best_reward) + 1
 
-        if judgment["verdict"] == "approve":
-            approved = True
-            break
-
-    final_video = band.get("current_video")
-    band.mark_done(final_video)
+    logger.info(
+        "[loop] done — best iteration %d/%d  reward=%.3f  path=%s",
+        best_iter, max_iterations, best_reward, best_video,
+    )
 
     return {
-        "final_video": final_video,
-        "iterations": band.iteration,
-        "approved": approved,
-        "band_path": str(band._path),
+        "final_video":      best_video,
+        "best_reward":      best_reward,
+        "best_iteration":   best_iter,
+        "all_rewards":      all_rewards,
+        "total_iterations": disc_result["total_iterations"],
+        "band_log":         band.log_path,
     }
